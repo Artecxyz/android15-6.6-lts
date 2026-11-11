@@ -34,6 +34,15 @@ static int cmp_name(const void *sym, const void *protected_sym)
  */
 bool gki_is_module_protected_export(const char *name)
 {
+#ifdef CONFIG_MODULE_FORCE_LOAD
+	/*
+	 * Force load mode: don't protect any GKI module exports.
+	 * Allows unsigned vendor modules to export symbols (e.g. rfkill_alloc)
+	 * when CONFIG_MODULE_FORCE_LOAD=y, matching the access-side bypass
+	 * in gki_is_module_unprotected_symbol().
+	 */
+	return false;
+#endif
 	if (NR_UNPROTECTED_SYMBOLS) {
 		return bsearch(name, gki_protected_exports_symbols, NR_PROTECTED_EXPORTS_SYMBOLS,
 		       MAX_PROTECTED_EXPORTS_NAME_LEN, cmp_name) != NULL;
@@ -54,6 +63,15 @@ bool gki_is_module_protected_export(const char *name)
  */
 bool gki_is_module_unprotected_symbol(const char *name)
 {
+#ifdef CONFIG_MODULE_FORCE_LOAD
+	/*
+	 * Force load mode: allow access to all kernel symbols.
+	 * This bypasses GKI KMI enforcement for vendor modules when the
+	 * abi_gki symbol list is incomplete (common with open-source builds).
+	 * Equivalent to how force_load bypasses CRC checks in version.c.
+	 */
+	return true;
+#endif
 	if (NR_UNPROTECTED_SYMBOLS) {
 		return bsearch(name, gki_unprotected_symbols, NR_UNPROTECTED_SYMBOLS,
 				MAX_UNPROTECTED_NAME_LEN, cmp_name) != NULL;
