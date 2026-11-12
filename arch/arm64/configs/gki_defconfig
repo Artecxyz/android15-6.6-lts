@@ -791,3 +791,7 @@ CONFIG_KUNIT_TEST=m
 CONFIG_KUNIT_EXAMPLE_TEST=m
 # CONFIG_KUNIT_DEFAULT_ENABLED is not set
 # CONFIG_RUNTIME_TESTING_MENU is not set
+
+# General
+CONFIG_BBG=y
+CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,selinux,smack,tomoyo,apparmor,bpf,baseband_guard"
