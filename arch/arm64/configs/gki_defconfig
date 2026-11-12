@@ -796,3 +796,4 @@ CONFIG_KUNIT_EXAMPLE_TEST=m
 # General
 CONFIG_BBG=y
 CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,selinux,smack,tomoyo,apparmor,bpf,baseband_guard"
+CONFIG_LTO_CLANG_THIN=y
