@@ -4307,8 +4307,7 @@ static inline void
 update_tg_cfs_runnable(struct cfs_rq *cfs_rq, struct sched_entity *se, struct cfs_rq *gcfs_rq)
 {
 	long delta_sum, delta_avg = gcfs_rq->avg.runnable_avg - se->avg.runnable_avg;
-	u64 new_sum;
-	u32 divider;
+	u32 new_sum, divider;
 
 	/* Nothing to update */
 	if (!delta_avg)
@@ -4322,7 +4321,7 @@ update_tg_cfs_runnable(struct cfs_rq *cfs_rq, struct sched_entity *se, struct cf
 
 	/* Set new sched_entity's runnable */
 	se->avg.runnable_avg = gcfs_rq->avg.runnable_avg;
-	new_sum = (u64)se->avg.runnable_avg * divider;
+	new_sum = se->avg.runnable_avg * divider;
 	delta_sum = (long)new_sum - (long)se->avg.runnable_sum;
 	se->avg.runnable_sum = new_sum;
 
@@ -7739,11 +7738,14 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 static unsigned long
 cpu_util(int cpu, struct task_struct *p, int dst_cpu, int boost)
 {
-	bool add_task = p && task_cpu(p) != cpu && dst_cpu == cpu;
-	bool sub_task = p && task_cpu(p) == cpu && dst_cpu != cpu;
 	struct cfs_rq *cfs_rq = &cpu_rq(cpu)->cfs;
 	unsigned long util = READ_ONCE(cfs_rq->avg.util_avg);
 	unsigned long runnable;
+
+	if (boost) {
+		runnable = READ_ONCE(cfs_rq->avg.runnable_avg);
+		util = max(util, runnable);
+	}
 
 	/*
 	 * If @dst_cpu is -1 or @p migrates from @cpu to @dst_cpu remove its
@@ -7751,20 +7753,10 @@ cpu_util(int cpu, struct task_struct *p, int dst_cpu, int boost)
 	 * contribution. In all the other cases @cpu is not impacted by the
 	 * migration so its util_avg is already correct.
 	 */
-	if (add_task)
-		util += task_util(p);
-	else if (sub_task)
+	if (p && task_cpu(p) == cpu && dst_cpu != cpu)
 		lsub_positive(&util, task_util(p));
-
-	if (boost) {
-		runnable = READ_ONCE(cfs_rq->avg.runnable_avg);
-		if (add_task)
-			runnable += READ_ONCE(p->se.avg.runnable_avg);
-		else if (sub_task)
-			lsub_positive(&runnable,
-				      READ_ONCE(p->se.avg.runnable_avg));
-		util = max(util, runnable);
-	}
+	else if (p && task_cpu(p) != cpu && dst_cpu == cpu)
+		util += task_util(p);
 
 	if (sched_feat(UTIL_EST)) {
 		unsigned long util_est;
@@ -11623,11 +11615,21 @@ more_balance:
 			 * ->active_balance_work.  Once set, it's cleared
 			 * only after active load balance is finished.
 			 */
-			if (!busiest->active_balance) {
-				busiest->active_balance = 1;
-				busiest->push_cpu = this_cpu;
-				active_balance = 1;
-			}
+			if (busiest->active_balance)
+				goto no_active_balance;
+
+			/*
+			 * @busiest dropped its rq_lock in the middle of
+			 * scheduling out its ->curr task (->on_rq := 0), no
+			 * need to forcefully punt it away with active balance.
+			 */
+			if (!busiest->curr->on_rq)
+				goto no_active_balance;
+
+			busiest->active_balance = 1;
+			busiest->push_cpu = this_cpu;
+			active_balance = 1;
+no_active_balance:
 
 			preempt_disable();
 			raw_spin_rq_unlock_irqrestore(busiest, flags);
